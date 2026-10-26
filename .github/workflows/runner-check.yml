@@ -6,7 +6,7 @@ on:
 
 jobs:
   check:
-    runs-on: [self-hosted, homeserver]
+    runs-on: homeserver
     timeout-minutes: 5
     steps:
       - name: 실행 호스트 확인

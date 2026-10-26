@@ -83,7 +83,7 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 ## CI (`ci.yml`)
 
 - 실행: main 대상 `pull_request`
-- 러너: `[self-hosted, homeserver]`
+- 러너: `homeserver` (러너 라벨 하나로 지정)
 - 머지 차단: main 룰셋이 `build` 체크 통과와 PR을 요구한다 (2026-10-26 사용자 결정, 레포 public 전환)
 - 단계: Docker 빌드의 `test` 스테이지에서 `./gradlew lintKotlin test`, 이어서 두 앱의 `runtime` 이미지 빌드
 - Gradle 캐시: BuildKit 캐시 마운트
@@ -91,7 +91,7 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 ## CD (`cd.yml`)
 
 - 실행: 수동 실행(`workflow_dispatch`)만. 입력 `server`로 배포 대상 서버를 고른다 (현재 `homeserver` 하나)
-- 러너: `[self-hosted, <server>]`. 서버마다 그 이름을 라벨로 단 러너를 둔다
+- 러너: `<server>` 라벨. 서버마다 그 이름을 라벨로 단 러너를 둔다
 - 동시 실행 방지: `concurrency: deploy-<server>`, 진행 중 배포는 취소하지 않는다
 - 단계
   1. `test` 스테이지를 다시 돌린다 (수동 실행은 main이 아닌 브랜치에서도 가능하다).

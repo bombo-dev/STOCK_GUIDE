@@ -710,7 +710,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, homeserver]
+    runs-on: homeserver
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -832,7 +832,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, "${{ inputs.server }}"]
+    runs-on: ${{ inputs.server }}
     timeout-minutes: 20
     env:
       IMAGE_TAG: ${{ github.sha }}
