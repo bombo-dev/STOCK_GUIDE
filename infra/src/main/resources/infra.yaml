@@ -1,0 +1,6 @@
+# DB 접속 정보는 홈서버 ~/postgres/stock_guide.env 에서 주입한다. 기본값을 두지 않는다.
+spring:
+  datasource:
+    url: ${STOCK_GUIDE_DB_URL}
+    username: ${STOCK_GUIDE_DB_USER}
+    password: ${STOCK_GUIDE_DB_PASSWORD}
