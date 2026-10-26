@@ -2,7 +2,6 @@ name: runner-check
 
 # 홈서버 self-hosted runner가 잡을 받아 실행하고 Docker를 쓸 수 있는지 확인한다.
 on:
-  push:
   workflow_dispatch:
 
 jobs:
