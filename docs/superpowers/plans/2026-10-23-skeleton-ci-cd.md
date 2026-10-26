@@ -22,6 +22,7 @@
 - DB 비밀번호를 레포, 워크플로, 로그에 넣지 않는다. 접속 정보는 홈서버 `/home/bombo/postgres/stock_guide.env`에서만 읽는다.
 - compose 파일에 PostgreSQL 서비스를 넣지 않는다. 넣으면 배포가 공용 DB를 재시작한다.
 - 홈서버에서 DB 컨테이너(`shared-postgres`)와 `~/postgres` 스택을 건드리지 않는다.
+- 레포는 public이다. 외부 PR의 워크플로 실행을 승인하지 않는다. 워크플로에 `secrets`를 쓰지 않고 `permissions: contents: read`를 둔다.
 - 로컬 Docker 데몬은 꺼져 있다. Docker 검증은 홈서버(`ssh homeserver`)에서 하거나 CI 결과로 확인한다.
 
 ## File Structure
@@ -42,8 +43,8 @@
 | `docker/Dockerfile` | `source` → `test` / `package` → `runtime` 스테이지 |
 | `.dockerignore` | 빌드 컨텍스트 축소 |
 | `deploy/compose.yml` | api, scheduler 실행 정의. DB 없음 |
-| `.github/workflows/ci.yml` | PR·브랜치 push 검증 |
-| `.github/workflows/cd.yml` | main push 배포 |
+| `.github/workflows/ci.yml` | main 대상 PR 검증. 실패 시 룰셋이 머지를 막는다 |
+| `.github/workflows/cd.yml` | 서버를 골라 수동 배포 |
 | `.github/workflows/runner-check.yml` | 수동 실행만 남김 |
 
 ---
@@ -571,6 +572,7 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 docs
 deploy
 .github
+.kotlin
 ```
 
 - [ ] **Step 2: 홈서버에서 빌드 확인**
@@ -578,6 +580,7 @@ deploy
 로컬 Docker 데몬은 꺼져 있다. 작업 트리를 홈서버 임시 디렉토리로 보내 빌드한다.
 
 ```bash
+ssh homeserver 'mkdir -p ~/tmp/sg-build'
 rsync -a --delete --exclude .git --exclude .gradle --exclude build ./ homeserver:/home/bombo/tmp/sg-build/
 ssh homeserver 'cd ~/tmp/sg-build && docker build --progress=plain -f docker/Dockerfile --target test -t sg-check:test . 2>&1 | tail -5'
 ssh homeserver 'cd ~/tmp/sg-build && docker build -q -f docker/Dockerfile --target runtime --build-arg MODULE=api -t sg-check:api . && docker run --rm --entrypoint sh sg-check:api -c "whoami; which wget"'
@@ -611,7 +614,7 @@ ssh homeserver 'rm -rf ~/tmp/sg-build && rmdir ~/tmp 2>/dev/null; docker image r
 - Create: `deploy/compose.yml`
 
 **Interfaces:**
-- Consumes: 이미지 `stock-guide-api:<태그>`, `stock-guide-scheduler:<태그>` (Task 7에서 빌드). 외부 네트워크 `db`. 환경 파일 `/home/bombo/postgres/stock_guide.env`.
+- Consumes: 이미지 `stock-guide-api:<태그>`, `stock-guide-scheduler:<태그>` (Task 7에서 빌드). 외부 네트워크 `db`. 환경 파일 `${HOME}/postgres/stock_guide.env` (러너 사용자의 홈. 홈서버는 `/home/bombo`).
 - Produces: compose 프로젝트 이름 `stock-guide`. 태그 변수 `IMAGE_TAG`(기본 `latest`). 컨테이너 `stock-guide-api`, `stock-guide-scheduler`.
 
 - [ ] **Step 1: compose 파일 작성**
@@ -621,6 +624,7 @@ ssh homeserver 'rm -rf ~/tmp/sg-build && rmdir ~/tmp 2>/dev/null; docker image r
 ```yaml
 # stock-guide 배포 정의. CD(.github/workflows/cd.yml)가 홈서버에서 실행한다.
 # DB는 공용 스택(~/postgres, shared-postgres)을 쓴다. 이 파일에 PostgreSQL을 넣지 않는다.
+# 배포 대상 서버는 모두 ${HOME}/postgres/stock_guide.env 를 둔다.
 # 수동 롤백: IMAGE_TAG=<이전 커밋 SHA> docker compose -f deploy/compose.yml up -d --wait
 name: stock-guide
 
@@ -629,7 +633,7 @@ services:
     image: stock-guide-api:${IMAGE_TAG:-latest}
     container_name: stock-guide-api
     restart: unless-stopped
-    env_file: /home/bombo/postgres/stock_guide.env
+    env_file: ${HOME}/postgres/stock_guide.env
     ports:
       - "127.0.0.1:8080:8080"
     mem_limit: 512m
@@ -645,7 +649,7 @@ services:
     image: stock-guide-scheduler:${IMAGE_TAG:-latest}
     container_name: stock-guide-scheduler
     restart: unless-stopped
-    env_file: /home/bombo/postgres/stock_guide.env
+    env_file: ${HOME}/postgres/stock_guide.env
     mem_limit: 384m
     networks: [db]
     healthcheck:
@@ -682,10 +686,11 @@ Expected: `api`, `scheduler`, `VALID`.
 **Files:**
 - Create: `.github/workflows/ci.yml`
 - Modify: `.github/workflows/runner-check.yml` (`push` 트리거 제거)
+- GitHub 설정: main 룰셋 (PR 필수, `build` 체크 필수)
 
 **Interfaces:**
 - Consumes: Task 4의 `docker/Dockerfile` 스테이지 `test`, `runtime`.
-- Produces: GitHub 체크 이름 `ci / build`.
+- Produces: GitHub 체크 컨텍스트 `build`. main 룰셋 `main 보호`.
 
 - [ ] **Step 1: `ci.yml` 작성**
 
@@ -694,8 +699,10 @@ name: ci
 
 on:
   pull_request:
-  push:
-    branches-ignore: [main]
+    branches: [main]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -736,18 +743,59 @@ on:
   workflow_dispatch:
 ```
 
-- [ ] **Step 3: 커밋하고 push (git-master 위임)**
+- [ ] **Step 3: 커밋, push, draft PR 생성 (git-master 위임)**
 
 대상: 두 워크플로 파일. 메시지: `SG-1 CI 워크플로 추가, runner-check를 수동 실행으로 변경`. push 대상 `origin SG-1/ci-cd`.
+CI는 PR에서만 돌므로 `SG-1/ci-cd` → `main` **draft** PR을 만든다. 제목: `SG-1 백엔드 골격과 홈서버 CI/CD`. 본문 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 
 - [ ] **Step 4: CI 결과 확인**
 
 ```bash
-gh run list --repo bombo-dev/STOCK_GUIDE --branch SG-1/ci-cd --limit 3
-gh run watch --repo bombo-dev/STOCK_GUIDE --exit-status $(gh run list --repo bombo-dev/STOCK_GUIDE --branch SG-1/ci-cd --workflow ci --limit 1 --json databaseId -q '.[0].databaseId')
+gh pr checks SG-1/ci-cd --repo bombo-dev/STOCK_GUIDE --watch
 ```
 
-Expected: `ci` 실행 성공. `runner-check`는 새로 실행되지 않는다.
+Expected: `build` 통과. `runner-check`는 새로 실행되지 않는다.
+
+- [ ] **Step 5: main 룰셋 설정**
+
+`ruleset.json` (스크래치 디렉토리에 만든다. 레포에 넣지 않는다):
+
+```json
+{
+  "name": "main 보호",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [{ "context": "build" }]
+      }
+    }
+  ]
+}
+```
+
+```bash
+gh api -X POST repos/bombo-dev/STOCK_GUIDE/rulesets --input ruleset.json -q '{id, name, enforcement}'
+gh api repos/bombo-dev/STOCK_GUIDE/rules/branches/main -q '.[].type'
+```
+
+Expected: `deletion`, `non_fast_forward`, `pull_request`, `required_status_checks`.
 
 ---
 
@@ -766,24 +814,32 @@ Expected: `ci` 실행 성공. `runner-check`는 새로 실행되지 않는다.
 name: cd
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      server:
+        description: 배포할 서버 (러너 라벨)
+        type: choice
+        required: true
+        options:
+          - homeserver
+
+permissions:
+  contents: read
 
 concurrency:
-  group: deploy-homeserver
+  group: deploy-${{ inputs.server }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: [self-hosted, homeserver]
+    runs-on: [self-hosted, "${{ inputs.server }}"]
     timeout-minutes: 20
     env:
       IMAGE_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
-      # private 무료 플랜은 브랜치 보호를 강제할 수 없다. 배포 전에 다시 검증한다.
+      # 수동 실행은 main이 아닌 브랜치에서도 가능하다. 배포 전에 다시 검증한다.
       - name: 린트와 테스트
         run: docker build --progress=plain -f docker/Dockerfile --target test .
 
@@ -815,11 +871,12 @@ Expected: 파일마다 `ok`.
 
 - [ ] **Step 3: 커밋하고 push (git-master 위임)**
 
-대상: `.github/workflows/cd.yml`. 메시지: `SG-1 홈서버 CD 워크플로 추가`. push 대상 `origin SG-1/ci-cd`. 브랜치 push이므로 CD는 실행되지 않고 CI만 실행된다.
+대상: `.github/workflows/cd.yml`. 메시지: `SG-1 서버 선택형 CD 워크플로 추가`. push 대상 `origin SG-1/ci-cd`. CD는 수동 실행만 있으므로 실행되지 않고, 열린 PR의 CI만 다시 돈다.
 
 - [ ] **Step 4: CI 재확인**
 
-Task 6 Step 4와 같은 명령으로 최신 `ci` 실행이 성공했는지 확인한다.
+Run: `gh pr checks SG-1/ci-cd --repo bombo-dev/STOCK_GUIDE --watch`
+Expected: `build` 통과.
 
 ---
 
@@ -836,14 +893,18 @@ Task 6 Step 4와 같은 명령으로 최신 `ci` 실행이 성공했는지 확�
 Run: `./gradlew --console=plain formatKotlin lintKotlin build`
 Expected: `BUILD SUCCESSFUL`, 테스트 4개 통과. `git status`에 포맷 변경이 없어야 한다.
 
-- [ ] **Step 2: PR 생성 (git-master 위임)**
+- [ ] **Step 2: PR을 리뷰 가능 상태로 전환 (git-master 위임)**
 
-`SG-1/ci-cd` → `main`. 제목: `SG-1 백엔드 골격과 홈서버 CI/CD`. 본문에 완료 기준 4개를 체크리스트로 넣고, 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`를 붙인다. **머지하지 않는다.** PR 링크를 사용자에게 전달한다.
+Task 6의 draft PR 본문에 완료 기준 4개를 체크리스트로 넣고 ready for review로 바꾼다. **머지하지 않는다.** PR 링크를 사용자에게 전달한다.
 
-- [ ] **Step 3: 사용자가 머지한 뒤 CD 결과 확인**
+- [ ] **Step 3: 사용자가 머지한 뒤 CD 실행과 결과 확인**
+
+`workflow_dispatch`는 워크플로 파일이 기본 브랜치에 있어야 실행된다. 머지 후 실행한다.
 
 ```bash
-gh run watch --repo bombo-dev/STOCK_GUIDE --exit-status $(gh run list --repo bombo-dev/STOCK_GUIDE --branch main --workflow cd --limit 1 --json databaseId -q '.[0].databaseId')
+gh workflow run cd --repo bombo-dev/STOCK_GUIDE --ref main -f server=homeserver
+sleep 5
+gh run watch --repo bombo-dev/STOCK_GUIDE --exit-status $(gh run list --repo bombo-dev/STOCK_GUIDE --workflow cd --limit 1 --json databaseId -q '.[0].databaseId')
 ```
 
 Expected: `cd` 실행 성공.

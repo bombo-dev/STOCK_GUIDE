@@ -12,8 +12,8 @@
 
 ## 완료 기준
 
-1. PR에서 CI(lint, test, build)가 통과한다.
-2. main 머지 후 CD가 홈서버에 api와 scheduler 컨테이너를 띄운다.
+1. PR에서 CI(lint, test, build)가 통과한다. CI가 실패하면 main 머지가 막힌다.
+2. 서버를 골라 수동 실행한 CD가 그 서버에 api와 scheduler 컨테이너를 띄운다.
 3. 두 앱의 actuator health가 UP이다. health는 `stock_guide` DB 접속을 포함한다.
 4. CD는 공용 PostgreSQL(`shared-postgres`)을 재시작하지 않는다.
 
@@ -74,28 +74,32 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 | 재시작 | `unless-stopped` | `unless-stopped` |
 | 헬스체크 | `/actuator/health/readiness` (컨테이너 내부 `wget`) | 같음 |
 
-- DB 접속 정보는 `/home/bombo/postgres/stock_guide.env`를 `env_file`로 읽는다.
+- DB 접속 정보는 `${HOME}/postgres/stock_guide.env`를 `env_file`로 읽는다 (홈서버는 `/home/bombo/postgres/stock_guide.env`).
+  배포 대상 서버는 모두 이 경로에 같은 키로 파일을 둔다.
   키: `STOCK_GUIDE_DB_URL`, `STOCK_GUIDE_DB_USER`, `STOCK_GUIDE_DB_PASSWORD`.
 - compose 파일에 PostgreSQL을 넣지 않는다. 넣으면 배포가 공용 DB를 재시작한다.
 - 공개 도메인과 HTTPS는 이 범위에 없다.
 
 ## CI (`ci.yml`)
 
-- 실행: `pull_request`, main이 아닌 브랜치 `push`
+- 실행: main 대상 `pull_request`
 - 러너: `[self-hosted, homeserver]`
+- 머지 차단: main 룰셋이 `build` 체크 통과와 PR을 요구한다 (2026-10-26 사용자 결정, 레포 public 전환)
 - 단계: Docker 빌드의 `test` 스테이지에서 `./gradlew lintKotlin test`, 이어서 두 앱의 `runtime` 이미지 빌드
 - Gradle 캐시: BuildKit 캐시 마운트
 
 ## CD (`cd.yml`)
 
-- 실행: main `push`, 수동 실행
-- 동시 실행 방지: `concurrency: deploy-homeserver`, 진행 중 배포는 취소하지 않는다
+- 실행: 수동 실행(`workflow_dispatch`)만. 입력 `server`로 배포 대상 서버를 고른다 (현재 `homeserver` 하나)
+- 러너: `[self-hosted, <server>]`. 서버마다 그 이름을 라벨로 단 러너를 둔다
+- 동시 실행 방지: `concurrency: deploy-<server>`, 진행 중 배포는 취소하지 않는다
 - 단계
-  1. `test` 스테이지를 다시 돌린다 (private 무료 플랜은 브랜치 보호를 강제할 수 없다).
+  1. `test` 스테이지를 다시 돌린다 (수동 실행은 main이 아닌 브랜치에서도 가능하다).
   2. api, scheduler 이미지를 커밋 SHA 태그와 `latest` 태그로 빌드한다.
   3. `deploy/compose.yml`로 `docker compose up -d --wait`를 실행한다.
   4. 두 컨테이너가 healthy가 될 때까지 기다린다. 제한 시간 안에 안 되면 실패로 끝낸다.
 - 롤백: 직전 SHA 이미지 태그로 `up -d`. 자동 롤백은 범위에 없다.
+- 서버 추가: 러너를 서버 이름 라벨로 등록하고, `cd.yml`의 `server` 선택지에 이름을 더한다.
 
 ## 코드 규칙
 
@@ -118,7 +122,10 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 
 ## 보안
 
-- 레포는 private이다. self-hosted runner는 push 권한자의 코드를 홈서버에서 실행한다.
+- 레포는 public이다 (2026-10-26 전환. 무료 플랜에서 머지 차단을 쓰기 위해서). 전환 전 이력에 비밀값이 없음을 확인했다.
+- self-hosted runner는 PR 코드를 홈서버에서 실행한다. 외부 기여자의 PR 워크플로는 모두 승인을 받아야 실행된다
+  (`fork-pr-contributor-approval: all_external_contributors`). 외부 PR의 워크플로 실행을 승인하지 않는다.
+- 워크플로 기본 토큰 권한은 읽기 전용이다. 워크플로에 `secrets`를 쓰지 않는다.
 - DB 비밀번호는 레포와 워크플로 로그에 넣지 않는다.
 - `stock_guide` 계정은 `mail_routing` DB에 접속할 수 없다 (2026-10-23 검증).
 
