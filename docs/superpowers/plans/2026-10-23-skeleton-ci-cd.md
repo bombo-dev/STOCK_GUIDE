@@ -10,6 +10,8 @@
 
 **Spec:** `docs/specs/2026-10-23-skeleton-ci-cd-design.md`
 
+> **2026-10-26 변경:** Task 2·3의 헬스 테스트(`ApiHealthTest`, `SchedulerHealthTest`)와 테스트 의존성은 실행 후 삭제했다. 골격에는 테스트를 두지 않고, 앱 기동과 DB 연결은 CD healthcheck로 확인한다.
+
 ## Global Constraints
 
 - 브랜치: `SG-1/ci-cd`. 커밋 메시지는 한국어, 첫 줄에 `SG-1` 이슈 키. 끝에 `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
@@ -891,7 +893,7 @@ Expected: `build` 통과.
 - [ ] **Step 1: 로컬 품질 게이트**
 
 Run: `./gradlew --console=plain formatKotlin lintKotlin build`
-Expected: `BUILD SUCCESSFUL`, 테스트 4개 통과. `git status`에 포맷 변경이 없어야 한다.
+Expected: `BUILD SUCCESSFUL`. `git status`에 포맷 변경이 없어야 한다.
 
 - [ ] **Step 2: PR을 리뷰 가능 상태로 전환 (git-master 위임)**
 

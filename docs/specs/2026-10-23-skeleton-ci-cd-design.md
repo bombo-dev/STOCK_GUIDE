@@ -48,6 +48,7 @@ api, scheduler ──implementation──▶ infra
 
 - `api`, `scheduler`는 `infra`를 `implementation`으로 의존한다 (사용자 결정).
 - 골격의 `infra`는 PostgreSQL 드라이버와 DataSource 설정만 가진다.
+- 골격에는 테스트를 두지 않는다 (2026-10-26 사용자 결정). 앱 기동과 DB 연결은 CD의 컨테이너 healthcheck(readiness)로 확인한다. 첫 기능 코드부터 테스트를 쓴다.
 - 엔티티가 없으므로 마이그레이션 도구는 넣지 않는다. 첫 테이블을 만들 때 정한다. FK 제약은 쓰지 않는다.
 
 ## 레포 배치
