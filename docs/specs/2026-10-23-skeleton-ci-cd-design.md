@@ -86,7 +86,7 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 - 실행: main 대상 `pull_request`
 - 러너: `homeserver` (러너 라벨 하나로 지정)
 - 머지 차단: main 룰셋이 `build` 체크 통과와 PR을 요구한다 (2026-10-26 사용자 결정, 레포 public 전환)
-- 단계: Docker 빌드의 `test` 스테이지에서 `./gradlew lintKotlin test`, 이어서 두 앱의 `runtime` 이미지 빌드
+- 단계: Docker 빌드의 `build` 스테이지에서 `./gradlew build` 하나만 실행한다. `build`가 `lintKotlin`, `test`, `bootJar`를 모두 포함한다 (2026-10-27 사용자 결정). 실행 이미지는 CD에서 만든다
 - Gradle 캐시: BuildKit 캐시 마운트
 
 ## CD (`cd.yml`)
@@ -95,7 +95,7 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 - 러너: `<server>` 라벨. 서버마다 그 이름을 라벨로 단 러너를 둔다
 - 동시 실행 방지: `concurrency: deploy-<server>`, 진행 중 배포는 취소하지 않는다
 - 단계
-  1. `test` 스테이지를 다시 돌린다 (수동 실행은 main이 아닌 브랜치에서도 가능하다).
+  1. `build` 스테이지(`./gradlew build`)를 다시 돌린다 (수동 실행은 main이 아닌 브랜치에서도 가능하다).
   2. api, scheduler 이미지를 커밋 SHA 태그와 `latest` 태그로 빌드한다.
   3. `deploy/compose.yml`로 `docker compose up -d --wait`를 실행한다.
   4. 두 컨테이너가 healthy가 될 때까지 기다린다. 제한 시간 안에 안 되면 실패로 끝낸다.

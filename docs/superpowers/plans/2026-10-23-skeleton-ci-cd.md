@@ -12,6 +12,8 @@
 
 > **2026-10-26 변경:** Task 2·3의 헬스 테스트(`ApiHealthTest`, `SchedulerHealthTest`)와 테스트 의존성은 실행 후 삭제했다. 골격에는 테스트를 두지 않고, 앱 기동과 DB 연결은 CD healthcheck로 확인한다.
 
+> **2026-10-27 변경:** Dockerfile의 `test` 스테이지를 `build` 스테이지(`./gradlew build`)로 바꿨다. CI는 이 스테이지 하나만 실행하고 실행 이미지 빌드는 CD에 맡긴다. 아래 Task 4·6·7의 `--target test`와 `lintKotlin test`는 실행 당시 기록이다.
+
 ## Global Constraints
 
 - 브랜치: `SG-1/ci-cd`. 커밋 메시지는 한국어, 첫 줄에 `SG-1` 이슈 키. 끝에 `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.

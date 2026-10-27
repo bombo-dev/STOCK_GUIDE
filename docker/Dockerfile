@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 # 빌드는 컨테이너 안에서 한다. 홈서버에 JDK를 설치하지 않는다.
-# 사용: docker build -f docker/Dockerfile --target test .
+# 사용: docker build -f docker/Dockerfile --target build .   # gradle build (린트, 테스트, bootJar)
 #       docker build -f docker/Dockerfile --build-arg MODULE=api -t stock-guide-api .
 
 FROM eclipse-temurin:25-jdk AS source
 WORKDIR /workspace
 COPY . .
 
-FROM source AS test
+FROM source AS build
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew --no-daemon --console=plain lintKotlin test
+    ./gradlew --no-daemon --console=plain build
 
 FROM source AS package
 ARG MODULE

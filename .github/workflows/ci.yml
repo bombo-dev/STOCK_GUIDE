@@ -18,12 +18,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 린트와 테스트
-        run: docker build --progress=plain -f docker/Dockerfile --target test .
-
-      - name: 실행 이미지 빌드
-        run: |
-          for module in api scheduler; do
-            docker build --progress=plain -f docker/Dockerfile --target runtime \
-              --build-arg MODULE="$module" -t "stock-guide-$module:ci" .
-          done
+      - name: gradle build
+        run: docker build --progress=plain -f docker/Dockerfile --target build .
