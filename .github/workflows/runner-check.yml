@@ -1,0 +1,21 @@
+name: runner-check
+
+# 홈서버 self-hosted runner가 잡을 받아 실행하고 Docker를 쓸 수 있는지 확인한다.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: homeserver
+    timeout-minutes: 5
+    steps:
+      - name: 실행 호스트 확인
+        run: |
+          echo "host=$(hostname) user=$(whoami)"
+          uname -a
+
+      - name: Docker 데몬 접근 확인
+        run: docker ps --format '{{.Names}}\t{{.Status}}'
+
+      - name: 컨테이너 실행 확인
+        run: docker run --rm hello-world
