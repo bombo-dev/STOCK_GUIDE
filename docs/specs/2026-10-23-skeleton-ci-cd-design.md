@@ -2,7 +2,7 @@
 
 - 작성일: 2026-10-23
 - 이슈: SG-1
-- 레포: bombo-dev/STOCK_GUIDE (백엔드 전용. 프론트엔드는 별도 레포)
+- 레포: bombo-lab/STOCK_GUIDE (백엔드 전용. 프론트엔드는 별도 레포)
 - 도메인 문서: `004_WORKSPACE/wiki/asset-management/`
 
 ## 목표
@@ -111,9 +111,9 @@ deploy/compose.yml         # api, scheduler만. DB 없음
 재실행은 원래 실행의 커밋과 입력(`server`)을 그대로 쓴다. 테스트, 이미지 빌드, healthcheck까지 같은 검증을 거친다.
 
 ```bash
-gh run list --repo bombo-dev/STOCK_GUIDE --workflow cd --status success \
+gh run list --repo bombo-lab/STOCK_GUIDE --workflow cd --status success \
   --json databaseId,headSha,createdAt,displayTitle
-gh run rerun <실행 ID> --repo bombo-dev/STOCK_GUIDE
+gh run rerun <실행 ID> --repo bombo-lab/STOCK_GUIDE
 ```
 
 GitHub 화면에서는 Actions → cd → 해당 실행 → Re-run all jobs.
@@ -130,7 +130,7 @@ docker image ls stock-guide-api; docker image ls stock-guide-scheduler
 # 2. compose 파일은 그 커밋의 것을 받는다.
 #    러너의 _work 체크아웃은 다음 잡이 덮어쓰므로 쓰지 않는다.
 mkdir -p ~/tmp
-curl -fsSL "https://raw.githubusercontent.com/bombo-dev/STOCK_GUIDE/<SHA>/deploy/compose.yml" -o ~/tmp/sg-rollback.yml
+curl -fsSL "https://raw.githubusercontent.com/bombo-lab/STOCK_GUIDE/<SHA>/deploy/compose.yml" -o ~/tmp/sg-rollback.yml
 
 # 3. 띄우고 healthy까지 기다린다
 IMAGE_TAG=<SHA> docker compose -f ~/tmp/sg-rollback.yml up -d --wait --wait-timeout 180
@@ -143,7 +143,7 @@ docker compose -f ~/tmp/sg-rollback.yml ps
 
 ```bash
 git push origin <SHA>:refs/heads/rollback/<SHA 앞 7자리>
-gh workflow run cd --repo bombo-dev/STOCK_GUIDE --ref rollback/<SHA 앞 7자리> -f server=<서버>
+gh workflow run cd --repo bombo-lab/STOCK_GUIDE --ref rollback/<SHA 앞 7자리> -f server=<서버>
 ```
 
 ### 롤백 후 확인과 주의
