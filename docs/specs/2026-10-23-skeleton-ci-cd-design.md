@@ -99,8 +99,59 @@ deploy/compose.yml         # api, scheduler만. DB 없음
   2. api, scheduler 이미지를 커밋 SHA 태그와 `latest` 태그로 빌드한다.
   3. `deploy/compose.yml`로 `docker compose up -d --wait`를 실행한다.
   4. 두 컨테이너가 healthy가 될 때까지 기다린다. 제한 시간 안에 안 되면 실패로 끝낸다.
-- 롤백: 직전 SHA 이미지 태그로 `up -d`. 자동 롤백은 범위에 없다.
+- 롤백: 아래 "롤백 절차"를 따른다. 자동 롤백은 범위에 없다.
 - 서버 추가: 러너를 서버 이름 라벨로 등록하고, `cd.yml`의 `server` 선택지에 이름을 더한다.
+
+## 롤백 절차
+
+되돌릴 커밋을 `<SHA>`라 한다. 그 커밋으로 배포에 성공했던 CD 실행이 있어야 한다.
+
+### A. 이전 CD 실행을 다시 실행한다 (기본)
+
+재실행은 원래 실행의 커밋과 입력(`server`)을 그대로 쓴다. 테스트, 이미지 빌드, healthcheck까지 같은 검증을 거친다.
+
+```bash
+gh run list --repo bombo-dev/STOCK_GUIDE --workflow cd --status success \
+  --json databaseId,headSha,createdAt,displayTitle
+gh run rerun <실행 ID> --repo bombo-dev/STOCK_GUIDE
+```
+
+GitHub 화면에서는 Actions → cd → 해당 실행 → Re-run all jobs.
+GitHub는 첫 실행 후 30일이 지난 실행을 다시 실행할 수 없다. 이때는 B나 C를 쓴다.
+
+### B. 서버에서 직접 이전 이미지로 띄운다
+
+GitHub를 쓸 수 없을 때 쓴다. `<SHA>` 태그 이미지가 서버에 남아 있어야 한다.
+
+```bash
+# 1. 이미지가 남아 있는지 확인
+docker image ls stock-guide-api; docker image ls stock-guide-scheduler
+
+# 2. compose 파일은 그 커밋의 것을 받는다.
+#    러너의 _work 체크아웃은 다음 잡이 덮어쓰므로 쓰지 않는다.
+mkdir -p ~/tmp
+curl -fsSL "https://raw.githubusercontent.com/bombo-dev/STOCK_GUIDE/<SHA>/deploy/compose.yml" -o ~/tmp/sg-rollback.yml
+
+# 3. 띄우고 healthy까지 기다린다
+IMAGE_TAG=<SHA> docker compose -f ~/tmp/sg-rollback.yml up -d --wait --wait-timeout 180
+docker compose -f ~/tmp/sg-rollback.yml ps
+```
+
+### C. 이미지도 없고 재실행 기한도 지났을 때
+
+`<SHA>`를 가리키는 브랜치를 만들고 그 브랜치로 CD를 수동 실행한다.
+
+```bash
+git push origin <SHA>:refs/heads/rollback/<SHA 앞 7자리>
+gh workflow run cd --repo bombo-dev/STOCK_GUIDE --ref rollback/<SHA 앞 7자리> -f server=<서버>
+```
+
+### 롤백 후 확인과 주의
+
+- `curl -s 127.0.0.1:8080/actuator/health/readiness`가 `{"status":"UP"}`이어야 한다.
+- B로 롤백하면 `latest` 태그는 여전히 롤백 전 이미지를 가리킨다.
+  그 뒤에 `IMAGE_TAG` 없이 `docker compose up`을 하면 롤백 전 버전이 다시 뜬다.
+- 공용 DB(`shared-postgres`)는 어떤 방법으로도 재시작되지 않는다. compose 파일에 DB가 없다.
 
 ## 코드 규칙
 
